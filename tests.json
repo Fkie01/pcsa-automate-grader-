@@ -1,0 +1,24 @@
+{
+  "milestones": [
+    {
+      "name": "Milestone 1",
+      "tests": [
+        {
+          "name": "basic_get",
+          "command": "curl -s 127.0.0.1:9000/1k.html",
+          "expected": "expected/basic_get.out"
+        },
+        {
+          "name": "head_request",
+          "command": "curl -s -I 127.0.0.1:9000/1k.html",
+          "expected": "expected/head_request.out"
+        },
+        {
+          "name": "get_request",
+          "command": "curl -s -D - http://127.0.0.1:9000/1k.html",
+          "expected": "expected/get_request.out"
+        }
+      ]
+    }
+  ]
+}
