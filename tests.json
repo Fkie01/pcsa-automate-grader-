@@ -2,6 +2,7 @@
   "milestones": [
     {
       "name": "Milestone 1 - Sequential Static Server",
+      "weight": 1,
       "tests": [
 
         {
@@ -99,6 +100,12 @@
           "command": "printf \"BADREQUEST\\r\\n\\r\\n\" | nc 127.0.0.1 9000",
           "expected": "expected/m1/malformed_request.out",
           "mode": "status"
+        },
+        {
+          "name": "Get Body",
+          "command": "curl -s http://127.0.0.1:9000/1k.html",
+          "expected": "expected/m1/get_body.out",
+          "mode": "full"
         }
       ]
     }
