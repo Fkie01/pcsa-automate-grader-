@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import time
+import re
 
 CONTAINER_NAME = "grader-test"
 IMAGE_NAME = "c-grader"
@@ -41,8 +42,33 @@ def create_samples():
         f.write(content)
 
     # index.html
-    with open(os.path.join(SAMPLES_PATH, "index.html"), "w") as f:
-        f.write("<h1>ICWS TEST</h1>")
+    file_path = os.path.join(SAMPLES_PATH, "index.html")
+
+    with open(file_path, "w") as f:
+        f.write("<!DOCTYPE html>\n")
+        f.write("<html lang='en'>\n")
+        f.write("<head>\n")
+        f.write("    <meta charset='UTF-8'>\n")
+        f.write("    <meta name='viewport' content='width=device-width, initial-scale=1.0'>\n")
+        f.write("    <title>ICWS Test Page</title>\n")
+        f.write("    <style>\n")
+        f.write("        body { font-family: Arial, sans-serif; margin: 40px; }\n")
+        f.write("        h1 { color: #2c3e50; }\n")
+        f.write("        .card { background: #f4f4f4; padding: 15px; margin-bottom: 10px; border-radius: 5px; }\n")
+        f.write("    </style>\n")
+        f.write("</head>\n")
+        f.write("<body>\n")
+        f.write("    <h1>ICWS Web Server Test</h1>\n")
+
+        # Generate multiple content sections
+        for i in range(100):   # increase this number to make file larger
+            f.write(f"    <div class='card'>\n")
+            f.write(f"        <h2>Section {i+1}</h2>\n")
+            f.write(f"        <p>This is automatically generated content block {i+1} for performance testing.</p>\n")
+            f.write("    </div>\n")
+
+        f.write("</body>\n")
+        f.write("</html>\n")
 
     print("✅ Sample files created")
 
@@ -161,11 +187,31 @@ def normalize_http_response(resp: str) -> str:
             continue
         if line.startswith("Last-Modified:"):
             continue
+        if line.startswith("Server:"):
+            continue
 
         filtered.append(line)
 
     return "\n".join(filtered).strip()
 
+# -----------------------------
+# Extract HTTP status code
+# -----------------------------
+def extract_status_code(resp: str):
+    """
+    Extracts HTTP status code from response.
+    Example: HTTP/1.1 501 Not Implemented
+    """
+    match = re.search(r"HTTP/\d\.\d\s+(\d{3})", resp)
+    if match:
+        return match.group(1)
+
+    # fallback if expected file only contains "501"
+    match = re.search(r"\b(\d{3})\b", resp)
+    if match:
+        return match.group(1)
+
+    return None
 
 def run_tests():
     with open("tests.json") as f:
@@ -178,9 +224,8 @@ def run_tests():
         print(f"\n===== {milestone['name']} =====")
 
         passed = 0
-        tests = milestone["tests"]
 
-        for test in tests:
+        for test in milestone["tests"]:
             print(f"\nRunning {test['name']}...")
 
             stdout, stderr, code = exec_in_container(test["command"])
@@ -188,28 +233,50 @@ def run_tests():
             with open(test["expected"]) as ef:
                 expected = ef.read()
 
-            actual_norm = normalize_http_response(stdout)
-            expected_norm = normalize_http_response(expected)
+            mode = test.get("mode", "full")  # default full
 
             total_tests += 1
 
-            if actual_norm == expected_norm:
-                print("✅ PASS")
-                passed += 1
-                total_passed += 1
-            else:
-                print("❌ FAIL")
-                diff = difflib.unified_diff(
-                    expected_norm.splitlines(),
-                    actual_norm.splitlines(),
-                    lineterm=""
-                )
-                print("\n".join(diff))
+            # ------------------------
+            # STATUS MODE
+            # ------------------------
+            if mode == "status":
+                actual_code = extract_status_code(stdout)
+                expected_code = extract_status_code(expected)
 
-        print(f"\n{milestone['name']} Score: {passed}/{len(tests)}")
+                if actual_code == expected_code:
+                    print(f"✅ PASS (Status {actual_code})")
+                    passed += 1
+                    total_passed += 1
+                else:
+                    print("❌ FAIL")
+                    print(f"Expected status: {expected_code}")
+                    print(f"Actual status:   {actual_code}")
+                    print(stdout)
+
+            # ------------------------
+            # FULL MODE (status + headers + body)
+            # ------------------------
+            else:
+                actual_norm = normalize_http_response(stdout).lower()
+                expected_norm = normalize_http_response(expected).lower()
+
+                if actual_norm == expected_norm:
+                    print("✅ PASS (Full Response Match)")
+                    passed += 1
+                    total_passed += 1
+                else:
+                    print("❌ FAIL")
+                    diff = difflib.unified_diff(
+                        expected_norm.splitlines(),
+                        actual_norm.splitlines(),
+                        lineterm=""
+                    )
+                    print("\n".join(diff))
+
+        print(f"\n{milestone['name']} Score: {passed}/{len(milestone['tests'])}")
 
     print(f"\nFINAL SCORE: {total_passed}/{total_tests}")
-
 # ------------------------------------------------
 # Main
 # ------------------------------------------------

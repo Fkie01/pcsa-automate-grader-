@@ -1,22 +1,104 @@
 {
   "milestones": [
     {
-      "name": "Milestone 1",
+      "name": "Milestone 1 - Sequential Static Server",
       "tests": [
+
         {
-          "name": "basic_get",
-          "command": "curl -s 127.0.0.1:9000/1k.html",
-          "expected": "expected/basic_get.out"
+          "name": "GET_existing_1k_file",
+          "command": "curl -s -i http://127.0.0.1:9000/1k.html",
+          "expected": "expected/m1/get_existing_1k_file.out",
+          "mode": "full"
+        },
+
+        {
+          "name": "HEAD_existing_1k_file",
+          "command": "curl -s -I http://127.0.0.1:9000/1k.html",
+          "expected": "expected/m1/head_existing_1k_file.out",
+          "mode": "full"
+        },
+
+        {
+          "name": "GET_existing_index",
+          "command": "curl -s -i http://127.0.0.1:9000/index.html",
+          "expected": "expected/m1/get_existing_index.out",
+          "mode": "full"
+        },
+
+        {
+          "name": "HEAD_existing_index",
+          "command": "curl -s -I http://127.0.0.1:9000/index.html",
+          "expected": "expected/m1/head_existing_index.out",
+          "mode": "full"
+        },
+
+        {
+          "name": "GET_root_should_serve_index",
+          "command": "curl -s -i http://127.0.0.1:9000/",
+          "expected": "expected/m1/get_root_should_serve_index.out",
+          "mode": "full"
+        },
+
+        {
+          "name": "GET_non_existing_file",
+          "command": "curl -s -i http://127.0.0.1:9000/notfound.html",
+          "expected": "expected/m1/get_non_existing_file.out",
+          "mode": "status"
+        },
+
+        {
+          "name": "Case_sensitive_filename",
+          "command": "curl -s -i http://127.0.0.1:9000/Index.html",
+          "expected": "expected/m1/case_sensitive_filename.out",
+          "mode": "status"
+        },
+
+        {
+          "name": "Path_traversal_attack",
+          "command": "curl -s -i http://127.0.0.1:9000/../../etc/passwd",
+          "expected": "expected/m1/path_traversal_attack.out",
+          "mode": "status"
+        },
+
+        {
+          "name": "Unsupported_PUT",
+          "command": "curl -s -i -X PUT http://127.0.0.1:9000/index.html",
+          "expected": "expected/m1/unsupported_put.out",
+          "mode": "status"
+        },
+
+        {
+          "name": "Unsupported_DELETE",
+          "command": "curl -s -i -X DELETE http://127.0.0.1:9000/index.html",
+          "expected": "expected/m1/unsupported_delete.out",
+          "mode": "status"
+        },
+
+        {
+          "name": "Unsupported_POST",
+          "command": "curl -s -i -X POST http://127.0.0.1:9000/index.html",
+          "expected": "expected/m1/unsupported_post.out",
+          "mode": "status"
+        },
+
+        {
+          "name": "HTTP_1_0_request",
+          "command": "printf \"GET /index.html HTTP/1.0\\r\\n\\r\\n\" | nc 127.0.0.1 9000",
+          "expected": "expected/m1/http_1_0_request.out",
+          "mode": "status"
+        },
+
+        {
+          "name": "HTTP_1_1_missing_host",
+          "command": "printf \"GET /index.html HTTP/1.1\\r\\n\\r\\n\" | nc 127.0.0.1 9000",
+          "expected": "expected/m1/http_1_1_missing_host.out",
+          "mode": "status"
         },
         {
-          "name": "head_request",
-          "command": "curl -s -I 127.0.0.1:9000/1k.html",
-          "expected": "expected/head_request.out"
-        },
-        {
-          "name": "get_request",
-          "command": "curl -s -D - http://127.0.0.1:9000/1k.html",
-          "expected": "expected/get_request.out"
+          "name": "Malformed_Request",
+          "command": "printf \"BADREQUEST\\r\\n\\r\\n\" | nc 127.0.0.1 9000",
+          "expected": "expected/m1/malformed_request.out",
+          "mode": "status"
         }
       ]
     }

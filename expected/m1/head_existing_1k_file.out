@@ -1,0 +1,8 @@
+HTTP/1.1 200 OK
+Date: Tue, 03 Mar 2026 08:14:34 GMT
+Server: micro/1.1
+Content-Length: 1024
+Content-Type: text/html
+Last-Modified: Sat, 28 Feb 2026 08:55:49 GMT
+Connection: keep-alive
+
