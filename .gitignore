@@ -8,3 +8,5 @@ __pycache__/
 # Output files
 *.csv
 *.log
+
+results.csv
