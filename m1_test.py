@@ -215,75 +215,75 @@ def extract_status_code(resp: str):
 
     return None
 
+
 def run_tests():
     result = []
+
     with open("tests.json") as f:
         data = json.load(f)
 
-    total_passed = 0
-    total_tests = 0
+    # Only take Milestone 1 (first milestone in JSON)
+    milestone = data["milestones"][0]
 
-    for milestone in data["milestones"]:
-        print(f"\n===== {milestone['name']} =====")
+    print(f"\n===== {milestone['name']} =====")
 
-        passed = 0
+    passed = 0
+    total_tests = len(milestone["tests"])
 
-        for test in milestone["tests"]:
-            print(f"\nRunning {test['name']}...")
+    for test in milestone["tests"]:
+        print(f"\nRunning {test['name']}...")
 
-            stdout, stderr, code = exec_in_container(test["command"])
+        stdout, stderr, code = exec_in_container(test["command"])
 
-            with open(test["expected"]) as ef:
-                expected = ef.read()
+        with open(test["expected"]) as ef:
+            expected = ef.read()
 
-            mode = test.get("mode", "full")  # default full
+        mode = test.get("mode", "full")
 
-            total_tests += 1
+        # ------------------------
+        # STATUS MODE
+        # ------------------------
+        if mode == "status":
+            actual_code = extract_status_code(stdout)
+            expected_code = extract_status_code(expected)
 
-            # ------------------------
-            # STATUS MODE
-            # ------------------------
-            if mode == "status":
-                actual_code = extract_status_code(stdout)
-                expected_code = extract_status_code(expected)
-
-                if actual_code == expected_code:
-                    print(f"✅ PASS (Status {actual_code})")
-                    passed += 1
-                    total_passed += 1
-                else:
-                    print("❌ FAIL")
-                    print(f"Expected status: {expected_code}")
-                    print(f"Actual status:   {actual_code}")
-                    print(stdout)
-
-            # ------------------------
-            # FULL MODE (status + headers + body)
-            # ------------------------
+            if actual_code == expected_code:
+                print(f"✅ PASS (Status {actual_code})")
+                passed += 1
             else:
-                actual_norm = normalize_http_response(stdout).lower()
-                expected_norm = normalize_http_response(expected).lower()
+                print("❌ FAIL")
+                print(f"Expected status: {expected_code}")
+                print(f"Actual status:   {actual_code}")
+                print(stdout)
 
-                if actual_norm == expected_norm:
-                    print("✅ PASS (Full Response Match)")
-                    passed += 1
-                    total_passed += 1
-                else:
-                    print("❌ FAIL")
-                    diff = difflib.unified_diff(
-                        expected_norm.splitlines(),
-                        actual_norm.splitlines(),
-                        lineterm=""
-                    )
-                    print("\n".join(diff))
+        # ------------------------
+        # FULL MODE
+        # ------------------------
+        else:
+            actual_norm = normalize_http_response(stdout).lower()
+            expected_norm = normalize_http_response(expected).lower()
 
-        print(f"\n{milestone['name']} Score: {passed}/{len(milestone['tests'])}")
-        print(f"\n{milestone['name']} Weight Score: {passed * milestone['weight']:.2f}/{len(milestone['tests']) * milestone['weight']:.2f}")
-        result.append(passed)
-        result.append(passed * milestone['weight'])
+            if actual_norm == expected_norm:
+                print("✅ PASS (Full Response Match)")
+                passed += 1
+            else:
+                print("❌ FAIL")
+                diff = difflib.unified_diff(
+                    expected_norm.splitlines(),
+                    actual_norm.splitlines(),
+                    lineterm=""
+                )
+                print("\n".join(diff))
 
+    weight_score = passed * milestone["weight"]
 
-    print(f"\nFINAL SCORE: {total_passed}/{total_tests}")
+    print(f"\n{milestone['name']} Score: {passed}/{total_tests}")
+    print(f"{milestone['name']} Weighted Score: {weight_score:.2f}/{total_tests * milestone['weight']:.2f}")
+
+    # Return only milestone 1 result
+    result.append(passed)            # m1_pass
+    result.append(weight_score)      # m1_score
+
     return result
 # ------------------------------------------------
 # Main
