@@ -23,38 +23,42 @@ def generate_expected():
     with open(TEST_FILE) as f:
         data = json.load(f)
 
-    for milestone in data["milestones"]:
-        for test in milestone["tests"]:
+    # Only Milestone 0
+    milestone = data["milestones"][0]
 
-            filename = os.path.basename(test["expected"])
-            output_path = os.path.join(OUTPUT_DIR, filename)
+    print(f"Generating expected files for: {milestone['name']}")
 
-            print(f"Generating {filename}...")
+    for test in milestone["tests"]:
 
-            stdout = run_command(test["command"])
+        filename = os.path.basename(test["expected"])
+        output_path = os.path.join(OUTPUT_DIR, filename)
 
-            # STATUS MODE → save only status line
-            if test.get("mode") == "status":
-                status_line = None
-                for line in stdout.splitlines():
-                    if line.startswith("HTTP/"):
-                        status_line = line
-                        break
+        print(f"Generating {filename}...")
 
-                if status_line is None:
-                    status_line = stdout.strip()
+        stdout = run_command(test["command"])
 
-                with open(output_path, "w") as f:
-                    f.write(status_line + "\n")
+        # STATUS MODE → save only status line
+        if test.get("mode") == "status":
+            status_line = None
+            for line in stdout.splitlines():
+                if line.startswith("HTTP/"):
+                    status_line = line
+                    break
 
-            # FULL MODE → save entire response
-            else:
-                with open(output_path, "w") as f:
-                    f.write(stdout)
+            if status_line is None:
+                status_line = stdout.strip()
 
-            print("  Done.")
+            with open(output_path, "w") as f:
+                f.write(status_line + "\n")
 
-    print("\nAll expected files generated successfully.")
+        # FULL MODE → save entire response
+        else:
+            with open(output_path, "w") as f:
+                f.write(stdout)
+
+        print("  Done.")
+
+    print("\nMilestone 0 expected files generated successfully.")
 
 
 if __name__ == "__main__":

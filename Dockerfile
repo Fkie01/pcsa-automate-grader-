@@ -16,7 +16,18 @@ RUN apt-get update && apt-get install -y \
     net-tools \
     vim \
     procps \
+    git \
+    libssl-dev \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt
+
+# Install wrk
+RUN git clone https://github.com/wg/wrk.git && \
+    cd wrk && \
+    make && \
+    cp wrk /usr/local/bin/
 
 WORKDIR /sandbox
 

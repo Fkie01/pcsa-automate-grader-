@@ -83,7 +83,7 @@ def start_container(project_path):
     "docker", "run", "-d",
     "--name", CONTAINER_NAME,
     "--memory=2g",
-    "--cpus=2.0",
+    "--cpus=4.0",
     "--pids-limit=128",
     "--network=none",                     # keep sandboxed
     "-v", f"{project_path}:/sandbox",
@@ -130,8 +130,8 @@ def start_server():
         "nohup ./icws "
         "--port 9000 "
         "--root /sandbox/grader_samples/ "
-        "--numThreads 4 "
-        "--timeout 10 "
+        "--numThreads 32 "
+        "--timeout 5 "
         "--cgiHandler ./cgi-demo/dumper.py"
         "> server.log 2>&1 &"
     )

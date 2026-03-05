@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 *.csv
 *.log
+not_working_test.txt

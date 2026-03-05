@@ -166,7 +166,6 @@ def normalize_http_response(resp: str) -> str:
         if not line:
             continue
 
-        # Remove curl debug & progress junk
         if line.startswith("*"):
             continue
         if line.startswith(">"):
@@ -180,11 +179,9 @@ def normalize_http_response(resp: str) -> str:
         if line[0].isdigit() and "----" in line:
             continue
 
-        # Remove "< " prefix from verbose headers
         if line.startswith("< "):
             line = line[2:]
 
-        # Ignore dynamic headers
         if line.startswith("Date:"):
             continue
         if line.startswith("Last-Modified:"):
@@ -194,7 +191,17 @@ def normalize_http_response(resp: str) -> str:
 
         filtered.append(line)
 
-    return "\n".join(filtered).strip()
+    if not filtered:
+        return ""
+
+    # Keep status line separate
+    status_line = filtered[0]
+    headers = filtered[1:]
+
+    # Sort headers to ignore order differences
+    headers_sorted = sorted(headers, key=lambda x: x.lower())
+
+    return "\n".join([status_line] + headers_sorted).strip()
 
 # -----------------------------
 # Extract HTTP status code
@@ -216,8 +223,8 @@ def extract_status_code(resp: str):
     return None
 
 
-def run_tests():
-    result = []
+def run_tests_m1():
+
 
     with open("tests.json") as f:
         data = json.load(f)
@@ -281,10 +288,9 @@ def run_tests():
     print(f"{milestone['name']} Weighted Score: {weight_score:.2f}/{total_tests * milestone['weight']:.2f}")
 
     # Return only milestone 1 result
-    result.append(passed)            # m1_pass
-    result.append(weight_score)      # m1_score
+# m1_score
 
-    return result
+    return [passed, weight_score]
 # ------------------------------------------------
 # Main
 # ------------------------------------------------

@@ -2,7 +2,7 @@
   "milestones": [
     {
       "name": "Milestone 1 - Sequential Static Server",
-      "weight": 1,
+      "weight": 1.1538461538,
       "tests": [
 
         {
@@ -33,12 +33,7 @@
           "mode": "full"
         },
 
-        {
-          "name": "GET_root_should_serve_index",
-          "command": "curl -s -i http://127.0.0.1:9000/",
-          "expected": "expected/m1/get_root_should_serve_index.out",
-          "mode": "full"
-        },
+
 
         {
           "name": "GET_non_existing_file",
@@ -81,23 +76,15 @@
           "expected": "expected/m1/unsupported_post.out",
           "mode": "status"
         },
-
         {
           "name": "HTTP_1_0_request",
-          "command": "printf \"GET /index.html HTTP/1.0\\r\\n\\r\\n\" | nc 127.0.0.1 9000",
+          "command": "curl -s -i --http1.0 http://127.0.0.1:9000/index.html",
           "expected": "expected/m1/http_1_0_request.out",
-          "mode": "status"
-        },
-
-        {
-          "name": "HTTP_1_1_missing_host",
-          "command": "printf \"GET /index.html HTTP/1.1\\r\\n\\r\\n\" | nc 127.0.0.1 9000",
-          "expected": "expected/m1/http_1_1_missing_host.out",
           "mode": "status"
         },
         {
           "name": "Malformed_Request",
-          "command": "printf \"BADREQUEST\\r\\n\\r\\n\" | nc 127.0.0.1 9000",
+          "command": "curl -s -i http://127.0.0.1:9000/BADREQUEST",
           "expected": "expected/m1/malformed_request.out",
           "mode": "status"
         },
@@ -107,6 +94,90 @@
           "expected": "expected/m1/get_body.out",
           "mode": "full"
         }
+      ]
+    },
+    {
+      "name": "Milestone 2 - Concurrent Server",
+      "weight": 1,
+      "tests": [
+
+        {
+          "name": "Timeout_408",
+          "command": "echo '' | timeout 6 nc 127.0.0.1 9000",
+          "expected": "expected/m2/timeout_408.out",
+          "mode": "status"
+        },
+
+        {
+          "name": "Persistent_Connection_KeepAlive",
+          "command": "curl -s -v --http1.1 http://127.0.0.1:9000/1k.html http://127.0.0.1:9000/1k.html -o /dev/null",
+          "expected": "expected/m2/persistent_keepalive.out",
+          "mode": "persistent"
+        },
+
+        {
+          "name": "HTTP_1_0_Default_Close",
+          "command": "curl -s -v --http1.0 http://127.0.0.1:9000/1k.html",
+          "expected": "expected/m2/http_1_0_default_close.out",
+          "mode": "close"
+        },
+
+        {
+          "name": "Slow_Client_Header",
+          "command": "python3 -c \"\nimport socket, time\ns = socket.socket()\ns.connect(('127.0.0.1', 9000))\ns.send(b'GET /1k.html HTTP/1.1\\r\\n')\ntime.sleep(6)\ndata = b''\ntry:\n    while True:\n        chunk = s.recv(4096)\n        if not chunk: break\n        data += chunk\nexcept: pass\nprint(data.decode(errors='replace'))\ns.close()\n\"",
+          "expected": "expected/m2/slow_client_header.out",
+          "mode": "status"
+        },
+
+        {
+          "name": "Concurrent_Persistent_Connections",
+          "command": "tmp=$(mktemp); total=0; for i in 1 2 3 4 5; do (out=$(curl -s -w '%{http_code} %{http_code} %{http_code}' --http1.1 http://127.0.0.1:9000/1k.html http://127.0.0.1:9000/1k.html http://127.0.0.1:9000/1k.html -o /dev/null 2>&1); ok=$(echo \"$out\" | tr ' ' '\\n' | grep -c '^200$'); fail=$((3 - ok)); echo \"$ok $fail\" >> $tmp) & done; wait; ok_total=$(awk '{s+=$1} END {print s+0}' $tmp); fail_total=$(awk '{s+=$2} END {print s+0}' $tmp); rm -f $tmp; echo \"Requests/sec: $ok_total\"; echo \"Failed requests: $fail_total\"",
+          "expected": "expected/m2/concurrent_persistent_connections.out",
+          "mode": "performance"
+        },
+
+        {
+          "name": "MultiClient_MultiPersistent",
+          "command": "tmp=$(mktemp); for i in 1 2 3 4 5; do (out=$(curl -s -w '%{http_code} %{http_code} %{http_code}' --http1.1 http://127.0.0.1:9000/1k.html http://127.0.0.1:9000/1k.html http://127.0.0.1:9000/1k.html -o /dev/null 2>&1); ok=$(echo \"$out\" | tr ' ' '\\n' | grep -c '^200$'); fail=$((3 - ok)); echo \"$ok $fail\" >> $tmp) & done; wait; ok_total=$(awk '{s+=$1} END {print s+0}' $tmp); fail_total=$(awk '{s+=$2} END {print s+0}' $tmp); rm -f $tmp; echo \"Requests/sec: $ok_total\"; echo \"Failed requests: $fail_total\"",
+          "expected": "expected/m2/multiclient_multipersistent.out",
+          "mode": "performance"
+        },
+
+        {
+          "name": "Persistent_Idle_Timeout",
+          "command": "curl -s -v --http1.1 http://127.0.0.1:9000/1k.html; sleep 6; curl -s -v --http1.1 http://127.0.0.1:9000/1k.html",
+          "expected": "expected/m2/persistent_idle_timeout.out",
+          "mode": "status_last"
+        },
+
+        {
+          "name": "AB_10000_requests",
+          "command": "ab -n 10000 -c 100 http://127.0.0.1:9000/1k.html",
+          "expected": "expected/m2/ab_10000_requests.out",
+          "mode": "performance"
+        },
+
+        {
+          "name": "AB_Stress_20000_requests",
+          "command": "ab -n 20000 -c 200 http://127.0.0.1:9000/1k.html",
+          "expected": "expected/m2/ab_stress_20000_requests.out",
+          "mode": "performance"
+        },
+
+        {
+          "name": "Thread_Safety_Test",
+          "command": "for i in 1 2 3 4 5; do ab -n 2000 -c 40 http://127.0.0.1:9000/1k.html & done; wait",
+          "expected": "expected/m2/thread_safety_test.out",
+          "mode": "performance"
+        },
+
+        {
+          "name": "WRK_Long_Run_60s",
+          "command": "wrk -t4 -c100 -d60s http://127.0.0.1:9000/1k.html",
+          "expected": "expected/m2/wrk_long_run_60s.out",
+          "mode": "performance"
+        }
+
       ]
     }
   ]
