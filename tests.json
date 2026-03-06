@@ -2,7 +2,7 @@
   "milestones": [
     {
       "name": "Milestone 1 - Sequential Static Server",
-      "weight": 1.1538461538,
+      "weight": 1.5384615385,
       "tests": [
 
         {
@@ -98,7 +98,7 @@
     },
     {
       "name": "Milestone 2 - Concurrent Server",
-      "weight": 1,
+      "weight": 3.6363636364,
       "tests": [
 
         {
@@ -178,6 +178,90 @@
           "mode": "performance"
         }
 
+      ]
+    },
+    {
+      "name": "Milestone 3 - CGI Support",
+      "weight": 2.3076923077,
+      "tests": [
+        {
+          "name": "Static_File_Regression",
+          "command": "curl -s -v http://127.0.0.1:9000/index.html",
+          "expected": "expected/m3/static_file_regression.out",
+          "mode": "status_last"
+        },
+        {
+          "name": "CGI_Basic_GET",
+          "command": "curl -s -v http://127.0.0.1:9000/cgi/",
+          "expected": "expected/m3/cgi_basic_get.out",
+          "mode": "status_last"
+        },
+        {
+          "name": "CGI_Query_String",
+          "command": "curl -s \"http://127.0.0.1:9000/cgi/?name=ICWS\"",
+          "expected": "expected/m3/cgi_query_string.out",
+          "mode": "body_contains"
+        },
+        {
+          "name": "CGI_POST_Request",
+          "command": "curl -s -X POST -H \"Content-Type: application/x-www-form-urlencoded\" -d \"name=ICWS\" http://127.0.0.1:9000/cgi/",
+          "expected": "expected/m3/cgi_post_request.out",
+          "mode": "body_contains"
+        },
+        {
+          "name": "CGI_HEAD_Request",
+          "command": "curl -s -v -I http://127.0.0.1:9000/cgi/",
+          "expected": "expected/m3/cgi_head_request.out",
+          "mode": "status"
+        },
+        {
+          "name": "CGI_Env_Vars",
+          "command": "curl -s -H \"User-Agent: TestAgent\" -H \"Cookie: session=123\" -H \"Accept: text/html\" http://127.0.0.1:9000/cgi/",
+          "expected": "expected/m3/cgi_env_vars.out",
+          "mode": "body_contains"
+        },
+        {
+          "name": "CGI_Invalid_Method",
+          "command": "curl -s -v -X PUT http://127.0.0.1:9000/cgi/",
+          "expected": "expected/m3/cgi_invalid_method.out",
+          "mode": "status"
+        },
+        {
+          "name": "CGI_Large_POST",
+          "command": "dd if=/dev/zero bs=1024 count=10 2>/dev/null | curl -s -v -X POST --output - --data-binary @- http://127.0.0.1:9000/cgi/",
+          "expected": "expected/m3/cgi_large_post.out",
+          "mode": "body_contains"
+        },
+        {
+          "name": "CGI_Sequential_Stability",
+          "command": "fail=0; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9000/cgi/); [ \"$code\" != \"200\" ] && fail=$((fail+1)); done; echo \"Requests/sec: 20\"; echo \"Failed requests: $fail\"",
+          "expected": "expected/m3/cgi_sequential_stability.out",
+          "mode": "performance"
+        },
+        {
+          "name": "CGI_Concurrency_AB",
+          "command": "ab -n 200 -c 20 http://127.0.0.1:9000/cgi/",
+          "expected": "expected/m3/cgi_concurrency_ab.out",
+          "mode": "performance"
+        },
+        {
+          "name": "CGI_Env_GET_C_Binary",
+          "command": "curl -s \"http://127.0.0.1:9000/cgi/test?x=1\"",
+          "expected": "expected/m3/cgi_env_get_c_binary.out",
+          "mode": "body_contains"
+        },
+        {
+          "name": "CGI_Env_POST_C_Binary",
+          "command": "curl -s -X POST -d 'x=1' http://127.0.0.1:9000/cgi/test",
+          "expected": "expected/m3/cgi_env_post_c_binary.out",
+          "mode": "body_contains"
+        },
+        {
+          "name": "Static_File_Benchmark",
+          "command": "ab -n 10000 -c 100 http://127.0.0.1:9000/test.html",
+          "expected": "expected/m3/static_file_benchmark.out",
+          "mode": "performance"
+        }
       ]
     }
   ]

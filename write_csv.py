@@ -1,5 +1,6 @@
 import csv
 import os
+import time
 
 def write_student_result(
     filename,
@@ -37,7 +38,7 @@ def write_student_result(
                 "m1_pass", "m1_score",
                 "m2_pass", "m2_score",
                 "m3_pass", "m3_score",
-                "total"
+                "total", 'timestamp'
             ])
 
         writer.writerow([
@@ -45,5 +46,5 @@ def write_student_result(
             m1_pass, m1_score,
             m2_pass, m2_score,
             m3_pass, m3_score,
-            total
+            total, time.strftime("%Y-%m-%d %H:%M:%S")
         ])

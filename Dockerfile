@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y \
     git \
     libssl-dev \
     unzip \
+    netcat-openbsd \        
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt
