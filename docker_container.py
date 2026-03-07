@@ -267,7 +267,7 @@ def start_container(project_path):
         "-v", f"{GRADER_CGI_PATH}:{CONTAINER_CGI}",
         "-w", workdir,
         IMAGE_NAME,
-        "sleep", "600"
+        "sleep", "800"
     ]
 
     result = run_cmd(cmd)
