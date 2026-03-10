@@ -32,9 +32,6 @@
           "expected": "expected/m1/head_existing_index.out",
           "mode": "full"
         },
-
-
-
         {
           "name": "GET_non_existing_file",
           "command": "curl -s -i http://127.0.0.1:9000/notfound.html",
@@ -138,7 +135,7 @@
 
         {
           "name": "MultiClient_MultiPersistent",
-          "command": "tmp=$(mktemp); for i in 1 2 3 4 5; do (out=$(curl -s -w '%{http_code} %{http_code} %{http_code}' --http1.1 http://127.0.0.1:9000/1k.html http://127.0.0.1:9000/1k.html http://127.0.0.1:9000/1k.html -o /dev/null 2>&1); ok=$(echo \"$out\" | tr ' ' '\\n' | grep -c '^200$'); fail=$((3 - ok)); echo \"$ok $fail\" >> $tmp) & done; wait; ok_total=$(awk '{s+=$1} END {print s+0}' $tmp); fail_total=$(awk '{s+=$2} END {print s+0}' $tmp); rm -f $tmp; echo \"Requests/sec: $ok_total\"; echo \"Failed requests: $fail_total\"",
+          "command": "tmp=$(mktemp); for i in 1 2 3 4 5; do (out=$(curl -s -w '%{http_code} %{http_code} %{http_code}' --http1.1 http://127.0.0.1:9000/1k.html http://127.0.0.1:9000/1k.html http://127.0.0.1:9000/1k.html -o /dev/null 2>&1); ok=$(echo \"$out\" | tr ' ' '\\n' | grep -c '^200$'); fail=$((3 - ok)); echo \"$ok $fail\" >> $tmp) & done; wait; ok_total=0; fail_total=0; while read o f; do ok_total=$((ok_total + o)); fail_total=$((fail_total + f)); done < $tmp; rm -f $tmp; echo \"Requests/sec: $ok_total\"; echo \"Failed requests: $fail_total\"",
           "expected": "expected/m2/multiclient_multipersistent.out",
           "mode": "performance"
         },
@@ -157,12 +154,7 @@
           "mode": "performance"
         },
 
-        {
-          "name": "AB_Stress_20000_requests",
-          "command": "ab -n 20000 -c 200 http://127.0.0.1:9000/1k.html",
-          "expected": "expected/m2/ab_stress_20000_requests.out",
-          "mode": "performance"
-        },
+        
 
         {
           "name": "Thread_Safety_Test",
@@ -175,6 +167,12 @@
           "name": "WRK_Long_Run_60s",
           "command": "wrk -t4 -c100 -d60s http://127.0.0.1:9000/1k.html",
           "expected": "expected/m2/wrk_long_run_60s.out",
+          "mode": "performance"
+        },
+        {
+          "name": "AB_Stress_20000_requests",
+          "command": "ab -n 20000 -c 200 http://127.0.0.1:9000/1k.html",
+          "expected": "expected/m2/ab_stress_20000_requests.out",
           "mode": "performance"
         }
 
