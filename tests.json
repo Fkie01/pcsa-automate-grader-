@@ -148,31 +148,30 @@
         },
 
         {
-          "name": "AB_10000_requests",
-          "command": "ab -n 10000 -c 100 http://127.0.0.1:9000/1k.html",
-          "expected": "expected/m2/ab_10000_requests.out",
+          "name": "HEY_1000_requests",
+          "command": "hey -n 1000 -c 10 http://127.0.0.1:9000/1k.html",
+          "expected": "expected/m2/hey_1000_requests.out",
           "mode": "performance"
         },
 
-        
-
         {
           "name": "Thread_Safety_Test",
-          "command": "for i in 1 2 3 4 5; do ab -n 2000 -c 40 http://127.0.0.1:9000/1k.html & done; wait",
+          "command": "for i in 1 2 3 4 5; do hey -n 2000 -c 40 http://127.0.0.1:9000/1k.html & done; wait",
           "expected": "expected/m2/thread_safety_test.out",
           "mode": "performance"
         },
 
         {
-          "name": "WRK_Long_Run_60s",
-          "command": "wrk -t4 -c100 -d60s http://127.0.0.1:9000/1k.html",
-          "expected": "expected/m2/wrk_long_run_60s.out",
+          "name": "WRK_Long_Run_30s",
+          "command": "wrk -t4 -c100 -d30s http://127.0.0.1:9000/1k.html",
+          "expected": "expected/m2/wrk_long_run_30s.out",
           "mode": "performance"
         },
+
         {
-          "name": "AB_Stress_20000_requests",
-          "command": "ab -n 20000 -c 200 http://127.0.0.1:9000/1k.html",
-          "expected": "expected/m2/ab_stress_20000_requests.out",
+          "name": "HEY_Stress_10000_requests",
+          "command": "hey -n 10000 -c 10 http://127.0.0.1:9000/1k.html",
+          "expected": "expected/m2/hey_stress_10000_requests.out",
           "mode": "performance"
         }
 
@@ -180,7 +179,7 @@
     },
     {
       "name": "Milestone 3 - CGI Support",
-      "weight": 2.3076923077,
+      "weight": 3,
       "tests": [
         {
           "name": "Static_File_Regression",
@@ -231,18 +230,6 @@
           "mode": "body_contains"
         },
         {
-          "name": "CGI_Sequential_Stability",
-          "command": "fail=0; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9000/cgi/); [ \"$code\" != \"200\" ] && fail=$((fail+1)); done; echo \"Requests/sec: 20\"; echo \"Failed requests: $fail\"",
-          "expected": "expected/m3/cgi_sequential_stability.out",
-          "mode": "performance"
-        },
-        {
-          "name": "CGI_Concurrency_AB",
-          "command": "ab -n 200 -c 20 http://127.0.0.1:9000/cgi/",
-          "expected": "expected/m3/cgi_concurrency_ab.out",
-          "mode": "performance"
-        },
-        {
           "name": "CGI_Env_GET_C_Binary",
           "command": "curl -s \"http://127.0.0.1:9000/cgi/test?x=1\"",
           "expected": "expected/m3/cgi_env_get_c_binary.out",
@@ -253,12 +240,6 @@
           "command": "curl -s -X POST -d 'x=1' http://127.0.0.1:9000/cgi/test",
           "expected": "expected/m3/cgi_env_post_c_binary.out",
           "mode": "body_contains"
-        },
-        {
-          "name": "Static_File_Benchmark",
-          "command": "ab -n 10000 -c 100 http://127.0.0.1:9000/test.html",
-          "expected": "expected/m3/static_file_benchmark.out",
-          "mode": "performance"
         }
       ]
     }

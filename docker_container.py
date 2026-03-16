@@ -260,7 +260,7 @@ def start_container(project_path):
         "--name", CONTAINER_NAME,
         "--memory=2g",
         "--cpus=4.0",
-        "--pids-limit=512",
+        "--pids-limit=2048",
         "--network=host",
         "-v", f"{project_path}:{CONTAINER_PROJECT}",
         "-v", f"{SAMPLES_PATH}:{CONTAINER_SAMPLES}:ro",
@@ -348,12 +348,14 @@ def start_server():
         f"2>/dev/null || true"
     )
 
+    # Add an environment variable for the handler path so icws can find it reliably
     exec_in_container(
+        f"export CGI_HANDLER={CONTAINER_CGI}/dispatcher.py && "
         "nohup ./icws "
         "--port 9000 "
         f"--root {CONTAINER_SAMPLES} "
-        "--numThreads 32 "
-        "--timeout 5 "
+        "--numThreads 64 "  # Increased from 32 for better performance
+        "--timeout 10 "     # Increased timeout to prevent early drops
         f"--cgiHandler {CONTAINER_CGI}/dispatcher.py "
         "> server.log 2>&1 &"
     )

@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y \
     git \
     libssl-dev \
     unzip \
-    netcat-openbsd \        
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt
@@ -29,6 +29,11 @@ RUN git clone https://github.com/wg/wrk.git && \
     cd wrk && \
     make && \
     cp wrk /usr/local/bin/
+
+# Install hey
+RUN curl -L https://hey-release.s3.us-east-2.amazonaws.com/hey_linux_amd64 \
+    -o /usr/local/bin/hey && \
+    chmod +x /usr/local/bin/hey
 
 WORKDIR /sandbox
 

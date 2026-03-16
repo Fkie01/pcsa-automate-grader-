@@ -1,5 +1,5 @@
-Requests/sec: 100.00
+Requests/sec: 250.00
 Failed requests: 50
 
 Status code distribution:
-  [200] 2000 responses
+  [200] 1000 responses

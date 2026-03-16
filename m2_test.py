@@ -2,8 +2,12 @@ import json
 import os
 import time
 import re
-
+import subprocess
 from docker_container import exec_in_container
+
+CONTAINER_NAME    = "grader-test"
+CONTAINER_SAMPLES = "/grader/samples"
+CONTAINER_CGI     = "/grader/cgi"
 
 
 def normalize_http_response(resp: str):
@@ -43,6 +47,34 @@ def normalize_http_response(resp: str):
     headers = sorted(filtered[1:], key=lambda x: x.lower())
     return "\n".join([status] + headers).strip()
 
+def is_server_up():
+    out, _, _ = exec_in_container(
+        "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9000/index.html"
+    )
+    return "200" in out
+
+
+def restart_server():
+    print("  ⚠ Server not responding — restarting...")
+    exec_in_container("pkill -f icws 2>/dev/null || true")
+    time.sleep(2)
+    exec_in_container(
+        f"nohup ./icws --port 9000 "
+        f"--root {CONTAINER_SAMPLES} "
+        f"--numThreads 32 --timeout 5 "
+        f"--cgiHandler {CONTAINER_CGI}/dispatcher.py "
+        f"> server.log 2>&1 &"
+    )
+    # wait up to 10s for port to open
+    for _ in range(20):
+        out, _, _ = exec_in_container("ss -ltn | grep 9000")
+        if out:
+            print("  ✅ Server restarted")
+            return True
+        time.sleep(0.5)
+    print("  ❌ Server failed to restart")
+    return False
+
 
 def extract_status_code(resp: str):
     match = re.search(r"HTTP/[\d.]+\s+(\d{3})", resp)
@@ -74,45 +106,58 @@ def extract_expected_rps(expected_path):
 
 
 def extract_failed_requests(expected_path):
-    if not os.path.exists(expected_path):
-        return 0
-
     with open(expected_path) as f:
-        content = f.read()
+        text = f.read()
 
-    match = re.search(r"Failed requests:\s*(\d+)", content, re.IGNORECASE)
-    return int(match.group(1)) if match else 0
+    # Standard failure patterns (ab style)
+    for pattern in [
+        r"Failed requests:\s*(\d+)",
+        r"Non-2xx or 3xx responses:\s*(\d+)",
+        r"Failed:\s*(\d+)",
+    ]:
+        m = re.search(pattern, text, re.IGNORECASE)
+        if m:
+            return int(m.group(1))
 
+    # hey style: status code distribution
+    status_matches = re.findall(r"\[(\d+)\]\s+(\d+)\s+responses", text)
+
+    if status_matches:
+        total = 0
+        success_200 = 0
+
+        for code, count in status_matches:
+            count = int(count)
+            total += count
+            if code == "200":
+                success_200 += count
+
+        return total - success_200
+
+    return 0
 
 def parse_performance_output(output):
     rps = None
     failed = 0
 
-    # Sum ALL rps matches (handles interleaved ab output)
-    rps_patterns = [
-        r"Requests per second:\s*([0-9.]+)",
-        r"Requests/sec:\s*([0-9.]+)",
-        r"([0-9.]+)\s*requests/sec",
-    ]
+    # Extract Requests/sec from hey
+    rps_match = re.search(r"Requests/sec:\s*([0-9.]+)", output, re.IGNORECASE)
+    if rps_match:
+        rps = float(rps_match.group(1))
 
-    for pattern in rps_patterns:
-        matches = re.findall(pattern, output, re.IGNORECASE)
-        if matches:
-            rps = sum(float(x) for x in matches)  # ← sum all, not just first
-            break
+    # Parse status code distribution
+    status_matches = re.findall(r"\[(\d+)\]\s+(\d+)\s+responses", output)
 
-    # Sum ALL failed matches — but only first number per line (avoid sub-errors)
-    fail_patterns = [
-        r"Failed requests:\s*(\d+)",
-        r"Non-2xx or 3xx responses:\s*(\d+)",
-        r"Failed:\s*(\d+)",
-    ]
+    total = 0
+    success_200 = 0
 
-    for pattern in fail_patterns:
-        matches = re.findall(pattern, output, re.IGNORECASE)
-        if matches:
-            failed = sum(int(x) for x in matches)  # ← sum all
-            break
+    for code, count in status_matches:
+        count = int(count)
+        total += count
+        if code == "200":
+            success_200 += count
+
+    failed = total - success_200
 
     return rps, failed
 
@@ -137,7 +182,13 @@ def run_tests_m2():
     total_tests = len(milestone["tests"])
 
     for test in milestone["tests"]:
+
         print(f"\nRunning {test['name']}...")
+
+        if not is_server_up():
+            if not restart_server():
+                print("  ❌ Cannot run test without server")
+                continue
 
         mode = test.get("mode", "performance")
         expected_path = test["expected"]

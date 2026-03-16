@@ -16,12 +16,24 @@ from write_csv import write_student_result
 
 PROJECT_PATH = "/Users/fkie01/developer/source/cs227/a02-ic-web-server-Fkie01"
 
+def extract_name(path):
+    # get last folder name
+    folder = os.path.basename(path)
 
+    # pattern: a02-ic-web-server-USERNAMEdigits
+    match = re.search(r'a\d+-ic-web-server-([A-Za-z]+)', folder)
+
+    if match:
+        return match.group(1)
+
+    return None
 
 if __name__ == "__main__":
     try:
         create_samples()
         start_container(PROJECT_PATH)
+        name = extract_name(PROJECT_PATH)
+        print(f"Extracted name: {name}")
 
         if not build_project():
             stop_container()
@@ -34,7 +46,7 @@ if __name__ == "__main__":
         result = result_m1 + result_m2 + result_m3  
         print("\n===== Final Results =====")
         print(f'Total score: {result_m1[1] + result_m2[1] + result_m3[1]} / 90')
-        write_student_result("results.csv", "Fkie01", *result)
+        write_student_result("results.csv", name, *result)
 
 
 

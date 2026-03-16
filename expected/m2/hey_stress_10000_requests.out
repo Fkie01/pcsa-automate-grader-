@@ -1,0 +1,5 @@
+Requests/sec: 300.00
+Failed requests: 100
+
+Status code distribution:
+  [200] 10000 responses

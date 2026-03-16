@@ -170,28 +170,60 @@ def check_body_contains(actual: str, expected_path: str):
 # Performance parsing — sum ALL matches
 # ------------------------------------------------
 def parse_performance_output(output):
-    rps    = None
+    rps = None
     failed = 0
 
-    for pattern in [
-        r"Requests per second:\s*([0-9.]+)",
-        r"Requests/sec:\s*([0-9.]+)",
-        r"([0-9.]+)\s*requests/sec",
-    ]:
-        matches = re.findall(pattern, output, re.IGNORECASE)
-        if matches:
-            rps = sum(float(x) for x in matches)
+    # 1. Improved RPS parsing (handles commas and multiple tool formats)
+    rps_patterns = [
+        r"Requests per second:\s*([\d,.]+)",   # ab
+        r"Requests/sec:\s*([\d,.]+)",          # hey
+        r"([\d,.]+)\s*requests/sec",           # wrk
+    ]
+    
+    for pattern in rps_patterns:
+        match = re.search(pattern, output, re.IGNORECASE)
+        if match:
+            # Remove commas before converting to float
+            rps = float(match.group(1).replace(',', ''))
             break
 
-    for pattern in [
-        r"Failed requests:\s*(\d+)",
-        r"Non-2xx or 3xx responses:\s*(\d+)",
-        r"Failed:\s*(\d+)",
-    ]:
-        matches = re.findall(pattern, output, re.IGNORECASE)
-        if matches:
-            failed = sum(int(x) for x in matches)
-            break
+    # 2. Capture 'failed' counts from common tools
+    # ApacheBench: 'Failed requests: 5'
+    # Hey: '[500] 10 responses' (where 500 is the status code)
+    
+    # Check for AB failure count
+    ab_fail_match = re.search(r"Failed requests:\s*(\d+)", output, re.IGNORECASE)
+    if ab_fail_match:
+        failed = int(ab_fail_match.group(1))
+    
+    # Check for Hey status distribution if AB didn't match
+    else:
+        status_matches = re.findall(r"\[(\d+)\]\s+(\d+)\s+responses", output)
+        if status_matches:
+            total = 0
+            success_200 = 0
+            for code, count in status_matches:
+                c = int(count)
+                total += c
+                if code == "200":
+                    success_200 += c
+            failed = total - success_200
+
+    return rps, failed
+    # hey status code distribution parsing
+    status_matches = re.findall(r"\[(\d+)\]\s+(\d+)\s+responses", output)
+
+    if status_matches:
+        total = 0
+        success_200 = 0
+
+        for code, count in status_matches:
+            count = int(count)
+            total += count
+            if code == "200":
+                success_200 += count
+
+        failed = total - success_200
 
     return rps, failed
 
@@ -218,12 +250,37 @@ def extract_expected_rps(path):
 def extract_expected_failed(path):
     if not os.path.exists(path):
         return 0
+
     with open(path) as f:
         content = f.read()
+
+    # ApacheBench style
     match = re.search(r"Failed requests:\s*(\d+)", content, re.IGNORECASE)
-    return int(match.group(1)) if match else 0
+    if match:
+        return int(match.group(1))
 
+    # wrk sometimes prints this
+    match = re.search(r"Non-2xx or 3xx responses:\s*(\d+)", content, re.IGNORECASE)
+    if match:
+        return int(match.group(1))
 
+    # hey status distribution
+    status_matches = re.findall(r"\[(\d+)\]\s+(\d+)\s+responses", content)
+
+    if status_matches:
+        total = 0
+        success = 0
+
+        for code, count in status_matches:
+            count = int(count)
+            total += count
+
+            if code.startswith("2") or code.startswith("3"):
+                success += count
+
+        return total - success
+
+    return 0
 # ------------------------------------------------
 # Main test runner — Milestone 3
 # ------------------------------------------------
@@ -368,15 +425,17 @@ def run_tests_m3():
 
                 if rps is None:
                     print(f"  ❌ FAIL (Could not parse RPS on run {i+1})")
-                    print(f"     stdout: {stdout[:200]}")
+                    print("----- FULL BENCHMARK OUTPUT -----")
+                    # Add these lines to see the raw error from the tool
+                    print(f"STDOUT: {stdout}")
+                    print(f"STDERR: {stderr}") 
+                    print("---------------------------------")
+                    
+                    # Also, peek at the server's log inside the container
+                    log_out, _, _ = exec_in_container("tail -n 20 server.log")
+                    print(f"----- SERVER LOG TAIL -----\n{log_out}")
                     success = False
-                    break
-
-                failed = failed or 0
-                print(f"  Run {i+1}: RPS={rps:.2f}, Failed={failed}")
-                total_rps       += rps
-                max_failed_seen  = max(max_failed_seen, failed)
-                time.sleep(1)
+                    break   
 
             if not success:
                 continue
