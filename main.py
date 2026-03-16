@@ -14,14 +14,13 @@ from m2_test import run_tests_m2
 from m3_test import run_tests_m3
 from write_csv import write_student_result
 
-PROJECT_PATH = "/Users/fkie01/developer/source/cs227/a02-ic-web-server-Fkie01"
+PROJECT_PATH = "/Users/fkie01/developer/source/cs227/a02-ic-webserver-peter-parit"
 
 def extract_name(path):
-    # get last folder name
     folder = os.path.basename(path)
-
-    # pattern: a02-ic-web-server-USERNAMEdigits
-    match = re.search(r'a\d+-ic-web-server-([A-Za-z]+)', folder)
+    
+    # This pattern looks for 'ic-webserver-' followed by everything else
+    match = re.search(r'a\d+-ic-webserver-(.+)', folder)
 
     if match:
         return match.group(1)
@@ -40,9 +39,9 @@ if __name__ == "__main__":
             sys.exit(1)
 
         start_server()
-        result_m1 = run_tests_m1()
-        result_m2 = run_tests_m2()
-        result_m3 = run_tests_m3()
+        result_m1 = run_tests_m1(name)
+        result_m2 = run_tests_m2(name)
+        result_m3 = run_tests_m3(name)
         result = result_m1 + result_m2 + result_m3  
         print("\n===== Final Results =====")
         print(f'Total score: {result_m1[1] + result_m2[1] + result_m3[1]} / 90')

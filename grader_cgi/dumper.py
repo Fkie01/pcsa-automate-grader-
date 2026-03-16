@@ -1,18 +1,11 @@
 #!/usr/bin/env python3
-import os, sys
+from os import environ
+import cgi, cgitb
 
-print('Content-Type: text/plain')
-print()
+CRLF = '\r\n'
 
-for key, value in sorted(os.environ.items()):
-    print(f'{key}={value}')
+cgitb.enable()
 
-content_length = os.environ.get('CONTENT_LENGTH', '0')
-try:
-    length = int(content_length)
-except ValueError:
-    length = 0
-
-if length > 0:
-    body = sys.stdin.buffer.read(length)
-    print(f'REQUEST_BODY={body.decode(errors="replace")}')
+print('HTTP/1.1 200 OK', end=CRLF)
+print(f'Server: {environ["SERVER_SOFTWARE"]}', end=CRLF)
+cgi.test()

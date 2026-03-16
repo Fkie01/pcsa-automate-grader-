@@ -4,3 +4,4 @@ __pycache__/
 *.csv
 *.log
 not_working_test.txt
+/results

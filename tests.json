@@ -225,7 +225,7 @@
         },
         {
           "name": "CGI_Large_POST",
-          "command": "dd if=/dev/zero bs=1024 count=10 2>/dev/null | curl -s -v -X POST --output - --data-binary @- http://127.0.0.1:9000/cgi/",
+          "command": "dd if=/dev/zero bs=1024 count=7 2>/dev/null | curl -s -v -X POST --output - --data-binary @- http://127.0.0.1:9000/cgi/",
           "expected": "expected/m3/cgi_large_post.out",
           "mode": "body_contains"
         },

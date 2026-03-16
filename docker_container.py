@@ -151,24 +151,17 @@ def create_samples():
     # dumper
     _write_file(
         os.path.join(GRADER_CGI_PATH, "dumper.py"),
-        "#!/usr/bin/env python3\n"
-        "import os, sys\n"
+        "#!/usr/bin/env python3\n"   # ← was python3.12
+        "from os import environ\n"
+        "import cgi, cgitb\n"
         "\n"
-        "print('Content-Type: text/plain')\n"
-        "print()\n"
+        "CRLF = '\\r\\n'\n"
         "\n"
-        "for key, value in sorted(os.environ.items()):\n"
-        "    print(f'{key}={value}')\n"
+        "cgitb.enable()\n"
         "\n"
-        "content_length = os.environ.get('CONTENT_LENGTH', '0')\n"
-        "try:\n"
-        "    length = int(content_length)\n"
-        "except ValueError:\n"
-        "    length = 0\n"
-        "\n"
-        "if length > 0:\n"
-        "    body = sys.stdin.buffer.read(length)\n"
-        "    print(f'REQUEST_BODY={body.decode(errors=\"replace\")}')\n",
+        "print('HTTP/1.1 200 OK', end=CRLF)\n"
+        "print(f'Server: {environ[\"SERVER_SOFTWARE\"]}', end=CRLF)\n"
+        "cgi.test()\n",
         executable=True
     )
 
@@ -341,10 +334,10 @@ def start_server():
     # fix execute permissions — macOS Docker doesn't preserve them
     exec_in_container(
         f"chmod +x {CONTAINER_CGI}/dispatcher.py "
-        f"{CONTAINER_CGI}/dumper.py "
-        f"{CONTAINER_CGI}/slow.py "
-        f"{CONTAINER_CGI}/error.py "
-        f"{CONTAINER_CGI}/test "
+        f"chmod +x {CONTAINER_CGI}/dumper.py "
+        f"chmod +x {CONTAINER_CGI}/slow.py "
+        f"chmod +x {CONTAINER_CGI}/error.py "
+        f"chmod +x {CONTAINER_CGI}/test "
         f"2>/dev/null || true"
     )
 
@@ -354,8 +347,8 @@ def start_server():
         "nohup ./icws "
         "--port 9000 "
         f"--root {CONTAINER_SAMPLES} "
-        "--numThreads 64 "  # Increased from 32 for better performance
-        "--timeout 10 "     # Increased timeout to prevent early drops
+        "--numThreads 32 "  # Increased from 32 for better performance
+        "--timeout 5 "     # Increased timeout to prevent early drops
         f"--cgiHandler {CONTAINER_CGI}/dispatcher.py "
         "> server.log 2>&1 &"
     )

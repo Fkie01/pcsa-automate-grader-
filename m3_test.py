@@ -3,12 +3,45 @@ import os
 import time
 import re
 import subprocess
+import datetime
 
 # ── config ────────────────────────────────────────────────
 MILESTONE_IDX     = 2
 CONTAINER_NAME    = "grader-test"
 CONTAINER_SAMPLES = "/grader/samples"
 CONTAINER_CGI     = "/grader/cgi"
+
+
+# log function for debugging
+
+# def save_grading_log(student_name, milestone_name, passed, total, weight_score, test_details):
+#     # 1. Pull the actual server.log from inside the container
+#     server_log_content, _, _ = exec_in_container("cat server.log")
+    
+#     # 2. Structure the data
+#     log_data = {
+#         "metadata": {
+#             "student_name": student_name,
+#             "milestone": milestone_name,
+#             "timestamp": datetime.datetime.now().isoformat(),
+#             "container_id": CONTAINER_NAME
+#         },
+#         "results": {
+#             "passed_count": passed,
+#             "total_tests": total,
+#             "weighted_score": weight_score,
+#             "percentage": (passed / total * 100) if total > 0 else 0
+#         },
+#         "tests": test_details,  # List of dicts for each test run
+#         "raw_server_stdout": server_log_content
+#     }
+
+#     # 3. Save to JSON
+#     filename = f"grade_{milestone_name.replace(' ', '_')}_{student_name}.json"
+#     with open(filename, "w") as f:
+#         json.dump(log_data, f, indent=4)
+    
+#     print(f"\n📂 Grading log saved to: {filename}")
 
 
 # ------------------------------------------------
@@ -126,31 +159,59 @@ def extract_expected_status(path: str):
 # ------------------------------------------------
 def normalize_output(output: str) -> str:
     lines = []
+    in_shell_env = False
+    env_dict = {}
+
     for line in output.splitlines():
         stripped = line.strip()
-        if stripped.startswith("* "):
+
+        if "<H3>Shell Environment:</H3>" in stripped:
+            in_shell_env = True
             continue
-        if stripped.startswith("> "):
+
+        if in_shell_env:
+            # Only exit when we hit the closing DL *after* seeing env content,
+            # or when a new H3 section starts (meaning the env block is done)
+            if stripped == "</DL>":
+                if env_dict:          # we've collected something — this is the real end
+                    in_shell_env = False
+                continue              # skip the tag either way
+
+            if stripped.startswith("<H3>") and env_dict:
+                in_shell_env = False
+                continue
+
+            match = re.search(r"<DT>\s*([^<]+)\s*<DD>\s*([^<]*)", stripped, re.IGNORECASE)
+            if match:
+                key = match.group(1).strip()
+                value = match.group(2).strip()
+                if key not in env_dict:          # first occurrence wins
+                    env_dict[key] = value
+                    lines.append(f"{key}={value}")
             continue
-        if stripped.startswith("< "):
-            continue
-        if re.match(r"HTTP/[\d.]+\s+\d{3}", stripped):
-            continue
-        if re.match(
-            r"(Date|Server|Last-Modified|Content-Length"
-            r"|Connection|Transfer-Encoding"
-            r"|Cache-Control|ETag):",
-            stripped, re.IGNORECASE
-        ):
-            continue
-        if re.match(r"<h1>.*</h1>", stripped):
-            continue
-        if not stripped:
-            continue
-        lines.append(stripped)
+
+        # --- Plain text path ---
+        if re.match(r'^[A-Z_][A-Z0-9_]*=', stripped):
+            lines.append(stripped)
+            key, _, value = stripped.partition('=')
+            env_dict[key] = value
+
+        if stripped.startswith("REQUEST_BODY="):
+            if stripped not in lines:
+                lines.append(stripped)
+            env_dict["REQUEST_BODY"] = stripped[len("REQUEST_BODY="):]
+
+    # Aliases for C binary tests
+    if 'REQUEST_METHOD' in env_dict:
+        lines.append(f"METHOD={env_dict['REQUEST_METHOD']}")
+    if 'QUERY_STRING' in env_dict:
+        lines.append(f"QUERY={env_dict['QUERY_STRING']}")
+    if 'CONTENT_LENGTH' in env_dict:
+        lines.append(f"LENGTH={env_dict['CONTENT_LENGTH']}")
+    else:
+        lines.append("LENGTH=")
+
     return "\n".join(lines)
-
-
 # ------------------------------------------------
 # Body contains check
 # ------------------------------------------------
@@ -161,8 +222,10 @@ def check_body_contains(actual: str, expected_path: str):
     with open(expected_path) as f:
         expected_lines = [l.strip() for l in f.readlines() if l.strip()]
 
-    normalized = normalize_output(actual)
-    missing = [line for line in expected_lines if line not in normalized]
+    normalized = normalize_output(actual)           # ← no .lower()
+    normalized_lower = normalized.lower()           # for comparison only
+
+    missing = [line for line in expected_lines if line.lower() not in normalized_lower]
     return len(missing) == 0, missing
 
 
@@ -210,22 +273,7 @@ def parse_performance_output(output):
             failed = total - success_200
 
     return rps, failed
-    # hey status code distribution parsing
-    status_matches = re.findall(r"\[(\d+)\]\s+(\d+)\s+responses", output)
 
-    if status_matches:
-        total = 0
-        success_200 = 0
-
-        for code, count in status_matches:
-            count = int(count)
-            total += count
-            if code == "200":
-                success_200 += count
-
-        failed = total - success_200
-
-    return rps, failed
 
 
 # ------------------------------------------------
@@ -284,7 +332,9 @@ def extract_expected_failed(path):
 # ------------------------------------------------
 # Main test runner — Milestone 3
 # ------------------------------------------------
-def run_tests_m3():
+
+
+def run_tests_m3(student_name):
     with open("tests.json") as f:
         data = json.load(f)
 
@@ -293,178 +343,147 @@ def run_tests_m3():
         print(f"❌ milestones[{MILESTONE_IDX}] not found")
         return [0, 0]
 
-    milestone   = milestones[MILESTONE_IDX]
-    passed      = 0
-    total_tests = len(milestone["tests"])
+    milestone    = milestones[MILESTONE_IDX]
+    passed       = 0
+    total_tests  = len(milestone["tests"])
+    test_history = [] # 📝 Fix: Added to track details for JSON
 
     print(f"\n{'='*55}")
     print(f"  {milestone['name']}")
     print(f"{'='*55}")
 
     for test in milestone["tests"]:
-
         print(f"\nRunning {test['name']}...")
+        
+        # Initialize log entry for this specific test
+        test_log = {
+            "test_name": test["name"],
+            "command": test["command"],
+            "result": "FAIL",
+            "details": ""
+        }
 
-        # ── container health check ─────────────────────────
         if not assert_container(test['name']):
-            print(f"  ⏭ Skipping remaining tests — container not running")
+            test_log["details"] = "Container died."
+            test_history.append(test_log)
             break
 
-        # ── server health check + auto-restart ────────────
         if not is_server_up():
             if not restart_server():
-                print(f"  ❌ FAIL (Server could not be restarted)")
+                test_log["details"] = "Server down and failed to restart."
+                test_history.append(test_log)
                 continue
 
-        mode          = test.get("mode", "status")
+        mode = test.get("mode", "status")
         expected_path = test["expected"]
 
         if mode != "performance":
             stdout, stderr, code = exec_in_container(test["command"])
             combined_output = stdout + "\n" + stderr
+            test_log["output_raw"] = combined_output
+            if not assert_container(test['name']): break
 
-            if not assert_container(test['name']):
-                break
+            print(f"  --- stdout ---")
+            print(combined_output)
+            print(f"  --- end stdout ---")
 
-        # =====================================================
-        # STATUS
-        # =====================================================
+        # --- MODE: STATUS ---
         if mode == "status":
-
-            if not os.path.exists(expected_path):
-                print("  ❌ FAIL (Expected file missing)")
-                continue
-
             expected_status = extract_expected_status(expected_path)
             actual_status   = extract_status_code(combined_output)
-
             if actual_status == expected_status:
-                print(f"  ✅ PASS (Status {actual_status})")
+                test_log["result"] = "PASS"
                 passed += 1
             else:
-                print(f"  ❌ FAIL (Status mismatch)")
-                print(f"     Expected : {expected_status}")
-                print(f"     Actual   : {actual_status}")
-                print(f"     Output   :\n{combined_output[:400]}")
+                test_log["details"] = f"Status mismatch: Exp {expected_status}, Got {actual_status}"
 
-        # =====================================================
-        # STATUS_LAST
-        # =====================================================
+        # --- MODE: STATUS_LAST ---
         elif mode == "status_last":
-
-            if not os.path.exists(expected_path):
-                print("  ❌ FAIL (Expected file missing)")
-                continue
-
             expected_status = extract_expected_status(expected_path)
             actual_status   = extract_last_status_code(combined_output)
-
             if actual_status == expected_status:
-                print(f"  ✅ PASS (Last status {actual_status})")
+                test_log["result"] = "PASS"
                 passed += 1
             else:
-                print(f"  ❌ FAIL (Last status mismatch)")
-                print(f"     Expected : {expected_status}")
-                print(f"     Actual   : {actual_status}")
-                print(f"     Output   :\n{combined_output[:400]}")
+                test_log["details"] = f"Last status mismatch: Exp {expected_status}, Got {actual_status}"
 
-        # =====================================================
-        # BODY_CONTAINS
-        # =====================================================
+        # --- MODE: BODY_CONTAINS ---
         elif mode == "body_contains":
-
+            normalized_debug = normalize_output(combined_output)
+            print(f"  --- normalized ---")
+            print(normalized_debug)
+            print(f"  --- end normalized ---")
             ok, missing = check_body_contains(combined_output, expected_path)
-
             if ok:
-                print(f"  ✅ PASS (All expected body lines found)")
+                test_log["result"] = "PASS"
                 passed += 1
             else:
-                print(f"  ❌ FAIL (Missing lines in body)")
-                for m in missing:
-                    print(f"     Missing : {m}")
-                print(f"     Normalized output:\n{normalize_output(combined_output)[:600]}")
+                test_log["details"] = f"Missing body lines: {missing}"
 
-        # =====================================================
-        # PERFORMANCE
-        # runs=1 for sequential stability (loops internally)
-        # runs=3 for ab/wrk benchmarks
-        # =====================================================
+        # --- MODE: PERFORMANCE ---
         elif mode == "performance":
-
-            expected_rps    = extract_expected_rps(expected_path)
+            expected_rps = extract_expected_rps(expected_path)
             expected_failed = extract_expected_failed(expected_path)
-
-            if expected_rps is None:
-                print("  ❌ FAIL (Could not read expected RPS)")
-                continue
-
             required_rps = expected_rps * 0.80
-            print(f"  Expected RPS : {expected_rps:.2f}")
-            print(f"  Required RPS : {required_rps:.2f}  (80% threshold)")
-            print(f"  Max failed   : {expected_failed}")
-
-            runs            = 1 if test["name"] == "CGI_Sequential_Stability" else 3
-            total_rps       = 0.0
+            
+            runs = 1 if test["name"] == "CGI_Sequential_Stability" else 3
+            total_rps = 0.0
             max_failed_seen = 0
-            success         = True
+            success = True
 
             for i in range(runs):
-
-                if not assert_container(test['name']):
-                    success = False
-                    break
-
-                # restart server between runs if it crashed
-                if not is_server_up():
-                    if not restart_server():
-                        success = False
-                        break
-
+                if not is_server_up() and not restart_server():
+                    success = False; break
+                
                 stdout, stderr, code = exec_in_container(test["command"])
                 rps, failed = parse_performance_output(stdout + "\n" + stderr)
+                
+                if rps is not None:
+                    total_rps += rps
+                    max_failed_seen = max(max_failed_seen, failed)
+                else:
+                    success = False; break
 
-                if rps is None:
-                    print(f"  ❌ FAIL (Could not parse RPS on run {i+1})")
-                    print("----- FULL BENCHMARK OUTPUT -----")
-                    # Add these lines to see the raw error from the tool
-                    print(f"STDOUT: {stdout}")
-                    print(f"STDERR: {stderr}") 
-                    print("---------------------------------")
-                    
-                    # Also, peek at the server's log inside the container
-                    log_out, _, _ = exec_in_container("tail -n 20 server.log")
-                    print(f"----- SERVER LOG TAIL -----\n{log_out}")
-                    success = False
-                    break   
-
-            if not success:
-                continue
-
-            average_rps = total_rps / runs
-            print(f"  Average RPS  : {average_rps:.2f}")
-            print(f"  Max failed   : {max_failed_seen}")
-
-            if average_rps >= required_rps and max_failed_seen <= expected_failed:
-                print("  ✅ PASS")
-                passed += 1
+            if success:
+                avg_rps = total_rps / runs
+                test_log["rps_actual"] = avg_rps
+                test_log["failed_count"] = max_failed_seen
+                if avg_rps >= required_rps and max_failed_seen <= expected_failed:
+                    test_log["result"] = "PASS"
+                    passed += 1
             else:
-                print("  ❌ FAIL")
-                if average_rps < required_rps:
-                    print(f"     → RPS {average_rps:.2f} < required {required_rps:.2f}")
-                if max_failed_seen > expected_failed:
-                    print(f"     → Failed {max_failed_seen} > allowed {expected_failed}")
+                test_log["details"] = "Performance benchmark failed to execute or parse."
 
-        else:
-            print(f"  ⚠ Unsupported mode: {mode}")
+        test_history.append(test_log)
+        # Visual feedback
+        print(f"  {'✅' if test_log['result'] == 'PASS' else '❌'} {test_log['result']}")
 
-    # ── final score ───────────────────────────────────────────
+    # ── Final Scoring Logic ───────────────────────────────────
     weight_score = passed * milestone["weight"]
-    print(f"\n{'='*55}")
-    print(f"  {milestone['name']} Score          : {passed}/{total_tests}")
-    print(f"  {milestone['name']} Weighted Score : "
-          f"{weight_score:.2f}/{total_tests * milestone['weight']:.2f}")
-    print(f"{'='*55}\n")
+    
+    # ── 📝 JSON LOGGING BLOCK ────────────────────────────────
+    server_stdout, _, _ = exec_in_container("cat server.log")
+    
+    final_log = {
+        "metadata": {
+            "student": student_name,
+            "timestamp": datetime.datetime.now().isoformat(),
+            "milestone": milestone["name"]
+        },
+        "score": {
+            "passed": passed,
+            "total": total_tests,
+            "weighted": weight_score
+        },
+        "test_results": test_history,
+        "server_log_raw": server_stdout
+    }
 
+    log_filename = f"results/result_{student_name}_{milestone['name'].replace(' ', '_')}.json"
+    with open(log_filename, "w") as jf:
+        json.dump(final_log, jf, indent=4)
+    
+    print(f"\n📂 Full result log saved to: {log_filename}")
     return [passed, weight_score]
 
 

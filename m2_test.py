@@ -3,6 +3,8 @@ import os
 import time
 import re
 import subprocess
+import datetime
+import json
 from docker_container import exec_in_container
 
 CONTAINER_NAME    = "grader-test"
@@ -170,50 +172,57 @@ def has_connection_close(resp):
             return True
     return False
 
-
-def run_tests_m2():
+def run_tests_m2(student_name="unknown_student"):
     with open("tests.json") as f:
         data = json.load(f)
 
+    # Milestone 2 is index 1 in your data structure
     milestone = data["milestones"][1]
     print(f"\n===== {milestone['name']} =====")
 
     passed = 0
     total_tests = len(milestone["tests"])
+    test_history = []  # 📝 Added to track details for JSON
 
     for test in milestone["tests"]:
-
         print(f"\nRunning {test['name']}...")
+        
+        # Initialize log entry for this specific test
+        test_log = {
+            "test_name": test["name"],
+            "command": test["command"],
+            "mode": test.get("mode", "performance"),
+            "result": "FAIL",
+            "details": ""
+        }
 
         if not is_server_up():
             if not restart_server():
                 print("  ❌ Cannot run test without server")
+                test_log["details"] = "Server down and failed to restart."
+                test_history.append(test_log)
                 continue
 
-        mode = test.get("mode", "performance")
+        mode = test_log["mode"]
         expected_path = test["expected"]
 
-        # ── only run once upfront for non-performance modes ──
+        # Run command upfront for non-performance modes
         if mode != "performance":
             stdout, stderr, code = exec_in_container(test["command"])
             combined_output = stdout + "\n" + stderr
+            test_log["output_raw"] = combined_output
 
-        # =====================================================
-        # PERFORMANCE
-        # =====================================================
+        # --- MODE: PERFORMANCE ---
         if mode == "performance":
             expected_rps = extract_expected_rps(expected_path)
             expected_failed = extract_failed_requests(expected_path)
-
+            
             if expected_rps is None:
-                print("❌ FAIL (Could not read expected RPS)")
+                test_log["details"] = "Could not read expected RPS from file."
+                test_history.append(test_log)
                 continue
 
-            required_rps = expected_rps * 0.80  # 20% safety margin
-            print(f"Expected RPS : {expected_rps}")
-            print(f"Required RPS : {required_rps:.2f}  (80% threshold)")
-            print(f"Max failed   : {expected_failed}")
-
+            required_rps = expected_rps * 0.80
             runs = 5
             total_rps = 0.0
             max_failed_seen = 0
@@ -224,107 +233,83 @@ def run_tests_m2():
                 rps, failed = parse_performance_output(stdout + "\n" + stderr)
 
                 if rps is None:
-                    print(f"❌ FAIL (Could not parse RPS on run {i+1})")
-                    print(stdout)
-                    success = False
-                    break
+                    success = False; break
 
-                failed = failed or 0
-                print(f"  Run {i+1}: RPS={rps:.2f}, Failed={failed}")
                 total_rps += rps
-                max_failed_seen = max(max_failed_seen, failed)
+                max_failed_seen = max(max_failed_seen, failed or 0)
                 time.sleep(1)
 
-            if not success:
-                continue
-
-            average_rps = total_rps / runs
-            print(f"Average RPS      : {average_rps:.2f}")
-            print(f"Max failed seen  : {max_failed_seen}")
-
-            if average_rps >= required_rps and max_failed_seen <= expected_failed:
-                print("✅ PASS")
-                passed += 1
+            if success:
+                avg_rps = total_rps / runs
+                test_log["avg_rps"] = avg_rps
+                test_log["max_failed"] = max_failed_seen
+                if avg_rps >= required_rps and max_failed_seen <= expected_failed:
+                    test_log["result"] = "PASS"
+                    passed += 1
             else:
-                print("❌ FAIL")
-                if average_rps < required_rps:
-                    print(f"  → RPS {average_rps:.2f} < required {required_rps:.2f}")
-                if max_failed_seen > expected_failed:
-                    print(f"  → Failed {max_failed_seen} > allowed {expected_failed}")
+                test_log["details"] = "Failed to parse RPS during performance runs."
 
-        # =====================================================
-        # PERSISTENT
-        # =====================================================
+        # --- MODE: PERSISTENT ---
         elif mode == "persistent":
             if "Re-using existing connection" in combined_output:
-                print("✅ PASS (Connection reused)")
+                test_log["result"] = "PASS"
                 passed += 1
             else:
-                print("❌ FAIL (Keep-alive not detected)")
-                print(combined_output[:500])
+                test_log["details"] = "Keep-alive / Connection reuse not detected in curl output."
 
-        # =====================================================
-        # CLOSE
-        # =====================================================
+        # --- MODE: CLOSE ---
         elif mode == "close":
             if has_connection_close(combined_output):
-                print("✅ PASS (Connection: close detected)")
+                test_log["result"] = "PASS"
                 passed += 1
             else:
-                print("❌ FAIL (Connection: close not found)")
-                print(combined_output[:500])
+                test_log["details"] = "Connection: close header missing."
 
-        # =====================================================
-        # STATUS
-        # =====================================================
-        elif mode == "status":
+        # --- MODE: STATUS / STATUS_LAST ---
+        elif mode in ["status", "status_last"]:
             if not os.path.exists(expected_path):
-                print("❌ FAIL (Expected file missing)")
-                continue
-
-            with open(expected_path) as f:
-                expected_content = f.read()
-
-            expected_status = extract_status_code(expected_content)
-            actual_status = extract_status_code(combined_output)
-
-            if actual_status == expected_status:
-                print(f"✅ PASS (Status {actual_status})")
-                passed += 1
+                test_log["details"] = "Expected output file missing."
             else:
-                print("❌ FAIL (Status mismatch)")
-                print(f"  Expected : {expected_status}")
-                print(f"  Actual   : {actual_status}")
-                print(combined_output[:500])
+                with open(expected_path) as f:
+                    expected_status = extract_status_code(f.read())
+                
+                actual_status = (extract_status_code(combined_output) if mode == "status" 
+                                 else extract_last_status_code(combined_output))
 
-        # =====================================================
-        # STATUS_LAST  (e.g. Persistent_Idle_Timeout)
-        # =====================================================
-        elif mode == "status_last":
-            if not os.path.exists(expected_path):
-                print("❌ FAIL (Expected file missing)")
-                continue
+                if actual_status == expected_status:
+                    test_log["result"] = "PASS"
+                    passed += 1
+                else:
+                    test_log["details"] = f"Status mismatch. Exp: {expected_status}, Got: {actual_status}"
 
-            with open(expected_path) as f:
-                expected_content = f.read()
+        test_history.append(test_log)
+        print(f"  {'✅' if test_log['result'] == 'PASS' else '❌'} {test_log['result']}")
 
-            expected_status = extract_status_code(expected_content)
-            actual_status = extract_last_status_code(combined_output)
-
-            if actual_status == expected_status:
-                print(f"✅ PASS (Last status {actual_status})")
-                passed += 1
-            else:
-                print("❌ FAIL (Last status mismatch)")
-                print(f"  Expected : {expected_status}")
-                print(f"  Actual   : {actual_status}")
-                print(combined_output[:500])
-
-        else:
-            print(f"⚠ Unsupported mode: {mode}")
-
+    # ── Final Scoring Logic ──
     weight_score = passed * milestone["weight"]
-    print(f"\n{milestone['name']} Score          : {passed}/{total_tests}")
-    print(f"{milestone['name']} Weighted Score : {weight_score:.2f}/{total_tests * milestone['weight']:.2f}")
+    
+    # ── 📝 JSON LOGGING BLOCK ──
+    # Pull the server log from the container to see student's internal prints
+    server_stdout, _, _ = exec_in_container("cat server.log")
+    
+    final_log = {
+        "metadata": {
+            "student": student_name,
+            "timestamp": datetime.datetime.now().isoformat(),
+            "milestone": milestone["name"]
+        },
+        "summary": {
+            "passed": passed,
+            "total": total_tests,
+            "weighted_score": weight_score
+        },
+        "test_history": test_history,
+        "server_internal_log": server_stdout
+    }
 
+    log_filename = f"results/result_M2_{student_name}.json"
+    with open(log_filename, "w") as jf:
+        json.dump(final_log, jf, indent=4)
+    
+    print(f"\n📂 Grading log saved to: {log_filename}")
     return [passed, weight_score]

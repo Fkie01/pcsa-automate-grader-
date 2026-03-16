@@ -6,6 +6,9 @@ import subprocess
 import sys
 import time
 import re
+import datetime
+import json
+import difflib
 
 from docker_container import exec_in_container
 
@@ -223,29 +226,47 @@ def extract_status_code(resp: str):
     return None
 
 
-def run_tests_m1():
 
-
+def run_tests_m1(student_name="unknown_student"):
     with open("tests.json") as f:
         data = json.load(f)
 
-    # Only take Milestone 1 (first milestone in JSON)
+    # Milestone 1 is index 0
     milestone = data["milestones"][0]
-
     print(f"\n===== {milestone['name']} =====")
 
     passed = 0
     total_tests = len(milestone["tests"])
+    test_history = []  # 📝 Tracks each test for the JSON log
 
     for test in milestone["tests"]:
         print(f"\nRunning {test['name']}...")
+        
+        # Initialize log entry
+        test_log = {
+            "test_name": test["name"],
+            "command": test["command"],
+            "mode": test.get("mode", "full"),
+            "result": "FAIL",
+            "details": ""
+        }
 
+        # Execute command in container
         stdout, stderr, code = exec_in_container(test["command"])
+        combined_output = stdout + "\n" + stderr
+        test_log["output_raw"] = combined_output
+
+        # Load expected output
+        if not os.path.exists(test["expected"]):
+            test_log["details"] = f"Expected file missing: {test['expected']}"
+            test_history.append(test_log)
+            print(f"  ❌ {test_log['details']}")
+            continue
 
         with open(test["expected"]) as ef:
             expected = ef.read()
 
-        mode = test.get("mode", "full")
+        mode = test_log["mode"]
 
         # ------------------------
         # STATUS MODE
@@ -255,43 +276,63 @@ def run_tests_m1():
             expected_code = extract_status_code(expected)
 
             if actual_code == expected_code:
-                print(f"✅ PASS (Status {actual_code})")
+                test_log["result"] = "PASS"
                 passed += 1
             else:
-                print("❌ FAIL")
-                print(f"Expected status: {expected_code}")
-                print(f"Actual status:   {actual_code}")
-                print(stdout)
+                test_log["details"] = f"Status mismatch. Expected: {expected_code}, Actual: {actual_code}"
 
         # ------------------------
-        # FULL MODE
+        # FULL MODE (Diff based)
         # ------------------------
         else:
+            # Note: normalize_http_response and extract_status_code 
+            # must be defined in your utility section
             actual_norm = normalize_http_response(stdout).lower()
             expected_norm = normalize_http_response(expected).lower()
 
             if actual_norm == expected_norm:
-                print("✅ PASS (Full Response Match)")
+                test_log["result"] = "PASS"
                 passed += 1
             else:
-                print("❌ FAIL")
-                diff = difflib.unified_diff(
+                # Generate diff for the "details" field in JSON
+                diff = list(difflib.unified_diff(
                     expected_norm.splitlines(),
                     actual_norm.splitlines(),
                     lineterm=""
-                )
-                print("\n".join(diff))
+                ))
+                test_log["details"] = "Full response mismatch."
+                test_log["diff"] = diff
 
+        test_history.append(test_log)
+        print(f"  {'✅' if test_log['result'] == 'PASS' else '❌'} {test_log['result']}")
+
+    # ── Final Scoring Logic ──
     weight_score = passed * milestone["weight"]
 
-    print(f"\n{milestone['name']} Score: {passed}/{total_tests}")
-    print(f"{milestone['name']} Weighted Score: {weight_score:.2f}/{total_tests * milestone['weight']:.2f}")
+    # ── 📝 JSON LOGGING BLOCK ──
+    # Pull internal server log for debugging C-level errors (segfaults, etc.)
+    server_stdout, _, _ = exec_in_container("cat server.log 2>/dev/null || echo 'No server.log found'")
+    
+    final_log = {
+        "metadata": {
+            "student": student_name,
+            "timestamp": datetime.datetime.now().isoformat(),
+            "milestone": milestone["name"]
+        },
+        "summary": {
+            "passed": passed,
+            "total": total_tests,
+            "weighted_score": weight_score
+        },
+        "test_history": test_history,
+        "server_internal_log": server_stdout
+    }
 
-    # Return only milestone 1 result
-# m1_score
+    log_filename = f"results/result_M1_{student_name}.json"
+    with open(log_filename, "w") as jf:
+        json.dump(final_log, jf, indent=4)
+    
+    print(f"\n{milestone['name']} Score: {passed}/{total_tests}")
+    print(f"📂 Full result log saved to: {log_filename}")
 
     return [passed, weight_score]
-# ------------------------------------------------
-# Main
-# ------------------------------------------------
-
