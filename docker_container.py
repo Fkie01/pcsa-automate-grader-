@@ -296,6 +296,8 @@ def stop_container():
 def build_project():
     print("🔨 Building project...")
 
+    exec_in_container("apt-get update && apt-get install -y bison flex")
+
     exec_in_container("make clean 2>/dev/null || true")
     out, err, code = exec_in_container("make")
 

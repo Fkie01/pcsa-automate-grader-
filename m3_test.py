@@ -48,19 +48,30 @@ CONTAINER_CGI     = "/grader/cgi"
 # Execute command inside container via stdin
 # avoids shell escaping issues with $, %, quotes
 # ------------------------------------------------
-def exec_in_container(command):
+def exec_in_container(command, timeout=10):
     # unescape JSON-escaped quotes so bash sees: "$code" not \"$code\"
     command = command.replace('\\"', '"')
     cmd = ["docker", "exec", "-i", CONTAINER_NAME, "bash"]
-    result = subprocess.run(
-        cmd,
-        input=command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        errors="replace"
-    )
-    return result.stdout.strip(), "", result.returncode
+    
+    try:
+        result = subprocess.run(
+            cmd,
+            input=command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            errors="replace",
+            timeout=timeout  # The clock starts here
+        )
+        return result.stdout.strip(), "", result.returncode
+
+    except subprocess.TimeoutExpired as e:
+        # Capture whatever output was produced before the timeout (if any)
+        stdout_so_far = e.stdout.decode("utf-8", "replace") if e.stdout else ""
+        error_msg = f"❌ TIMEOUT: Command exceeded {timeout}s limit"
+        
+        # Return a custom error state that your main loop can recognize
+        return stdout_so_far + "\n" + error_msg, "TIMEOUT_ERROR", 124
 
 
 # ------------------------------------------------

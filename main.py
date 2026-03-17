@@ -14,7 +14,7 @@ from m2_test import run_tests_m2
 from m3_test import run_tests_m3
 from write_csv import write_student_result
 
-PROJECT_PATH = "/Users/fkie01/developer/source/cs227/a02-ic-webserver-kavvvz"
+PROJECT_PATH = "/Users/fkie01/developer/source/cs227/a02-ic-webserver-psamawarin"
 
 def extract_name(path):
     folder = os.path.basename(path)
