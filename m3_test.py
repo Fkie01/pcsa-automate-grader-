@@ -57,7 +57,8 @@ def exec_in_container(command):
         input=command,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        text=True
+        text=True,
+        errors="replace"
     )
     return result.stdout.strip(), "", result.returncode
 
