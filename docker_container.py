@@ -1,50 +1,56 @@
 import difflib
 import json
 import os
+import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
-import re
-import stat
 
 CONTAINER_NAME = "grader-test"
-IMAGE_NAME     = "c-grader"
+IMAGE_NAME = "c-grader"
 
 # ── grader-owned directories (on host) ───────────────────
-SAMPLES_PATH    = os.path.abspath("grader_samples")
+SAMPLES_PATH = os.path.abspath("grader_samples")
 GRADER_CGI_PATH = os.path.abspath("grader_cgi")
 
 # ── paths inside the container ───────────────────────────
 CONTAINER_SAMPLES = "/grader/samples"
-CONTAINER_CGI     = "/grader/cgi"
+CONTAINER_CGI = "/grader/cgi"
 CONTAINER_PROJECT = "/sandbox"
 
 # ------------------------------------------------
 # Utility
 # ------------------------------------------------
 
+
 def run_cmd(cmd):
     return subprocess.run(cmd, capture_output=True, text=True)
 
+
 def exec_in_container(command):
-    """
-    Run command inside container via stdin.
-    Merges stderr into stdout so CGI body output isn't lost.
-    """
     cmd = ["docker", "exec", "-i", CONTAINER_NAME, "bash"]
-    result = subprocess.run(
-        cmd,
-        input=command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,   # merge stderr into stdout
-        text=True
-    )
-    return result.stdout.strip(), "", result.returncode
+    try:
+        result = subprocess.run(
+            cmd,
+            input=command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=15,  # Prevent the grader from hanging if the container is frozen
+        )
+        return result.stdout.strip(), "", result.returncode
+    except subprocess.TimeoutExpired:
+        return "ERROR_TIMEOUT", "Container Hang", 124
+    except Exception as e:
+        return f"ERROR: {str(e)}", "", 1
+
 
 def _make_executable(path):
     st = os.stat(path)
     os.chmod(path, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
 
 def _write_file(path, content, executable=False):
     parent = os.path.dirname(path)
@@ -56,9 +62,11 @@ def _write_file(path, content, executable=False):
         _make_executable(path)
     print(f"   {'✅' if executable else '📄'} {os.path.relpath(path)}")
 
+
 # ------------------------------------------------
 # Setup Sample Files
 # ------------------------------------------------
+
 
 def create_samples():
     print("📁 Creating grader sample files...")
@@ -82,20 +90,26 @@ def create_samples():
         f.write("<html lang='en'>\n")
         f.write("<head>\n")
         f.write("    <meta charset='UTF-8'>\n")
-        f.write("    <meta name='viewport' content='width=device-width, initial-scale=1.0'>\n")
+        f.write(
+            "    <meta name='viewport' content='width=device-width, initial-scale=1.0'>\n"
+        )
         f.write("    <title>ICWS Test Page</title>\n")
         f.write("    <style>\n")
         f.write("        body { font-family: Arial, sans-serif; margin: 40px; }\n")
         f.write("        h1 { color: #2c3e50; }\n")
-        f.write("        .card { background: #f4f4f4; padding: 15px; margin-bottom: 10px; border-radius: 5px; }\n")
+        f.write(
+            "        .card { background: #f4f4f4; padding: 15px; margin-bottom: 10px; border-radius: 5px; }\n"
+        )
         f.write("    </style>\n")
         f.write("</head>\n")
         f.write("<body>\n")
         f.write("    <h1>ICWS Web Server Test</h1>\n")
         for i in range(100):
             f.write(f"    <div class='card'>\n")
-            f.write(f"        <h2>Section {i+1}</h2>\n")
-            f.write(f"        <p>This is automatically generated content block {i+1} for performance testing.</p>\n")
+            f.write(f"        <h2>Section {i + 1}</h2>\n")
+            f.write(
+                f"        <p>This is automatically generated content block {i + 1} for performance testing.</p>\n"
+            )
             f.write("    </div>\n")
         f.write("</body>\n")
         f.write("</html>\n")
@@ -145,13 +159,13 @@ def create_samples():
         "    env=os.environ.copy(),\n"
         ")\n"
         "sys.exit(proc.returncode)\n",
-        executable=True
+        executable=True,
     )
 
     # dumper
     _write_file(
         os.path.join(GRADER_CGI_PATH, "dumper.py"),
-        "#!/usr/bin/env python3\n"   # ← was python3.12
+        "#!/usr/bin/env python3\n"  # ← was python3.12
         "from os import environ\n"
         "import cgi, cgitb\n"
         "\n"
@@ -162,7 +176,7 @@ def create_samples():
         "print('HTTP/1.1 200 OK', end=CRLF)\n"
         "print(f'Server: {environ[\"SERVER_SOFTWARE\"]}', end=CRLF)\n"
         "cgi.test()\n",
-        executable=True
+        executable=True,
     )
 
     # slow
@@ -174,7 +188,7 @@ def create_samples():
         "print()\n"
         "time.sleep(10)\n"
         "print('done')\n",
-        executable=True
+        executable=True,
     )
 
     # error
@@ -184,7 +198,7 @@ def create_samples():
         "print('Content-Type: text/plain')\n"
         "print()\n"
         "raise Exception('Intentional CGI failure for grader')\n",
-        executable=True
+        executable=True,
     )
 
     # C binary
@@ -193,11 +207,11 @@ def create_samples():
 
     _write_file(
         c_src,
-        '#include <stdio.h>\n'
-        '#include <stdlib.h>\n'
-        '#include <string.h>\n'
-        '\n'
-        'int main() {\n'
+        "#include <stdio.h>\n"
+        "#include <stdlib.h>\n"
+        "#include <string.h>\n"
+        "\n"
+        "int main() {\n"
         '    printf("Content-Type: text/plain\\r\\n\\r\\n");\n'
         '    char *method = getenv("REQUEST_METHOD");\n'
         '    char *query  = getenv("QUERY_STRING");\n'
@@ -205,18 +219,18 @@ def create_samples():
         '    printf("METHOD=%s\\n", method ? method : "(null)");\n'
         '    printf("QUERY=%s\\n",  query  ? query  : "(empty)");\n'
         '    printf("LENGTH=%s\\n", length ? length : "(null)");\n'
-        '    if (length && atoi(length) > 0) {\n'
-        '        int len = atoi(length);\n'
-        '        char *buf = malloc(len + 1);\n'
-        '        if (buf) {\n'
-        '            fread(buf, 1, len, stdin);\n'
-        '            buf[len] = 0;\n'
+        "    if (length && atoi(length) > 0) {\n"
+        "        int len = atoi(length);\n"
+        "        char *buf = malloc(len + 1);\n"
+        "        if (buf) {\n"
+        "            fread(buf, 1, len, stdin);\n"
+        "            buf[len] = 0;\n"
         '            printf("BODY=%s\\n", buf);\n'
-        '            free(buf);\n'
-        '        }\n'
-        '    }\n'
-        '    return 0;\n'
-        '}\n'
+        "            free(buf);\n"
+        "        }\n"
+        "    }\n"
+        "    return 0;\n"
+        "}\n",
     )
 
     # test.c is written to host — compiled inside container in start_server()
@@ -236,6 +250,7 @@ def create_samples():
 # Docker
 # ------------------------------------------------
 
+
 def start_container(project_path):
     print("🐳 Starting container...")
 
@@ -249,18 +264,26 @@ def start_container(project_path):
     print(f"   Working dir: {workdir}")
 
     cmd = [
-        "docker", "run", "-d",
-        "--name", CONTAINER_NAME,
+        "docker",
+        "run",
+        "-d",
+        "--name",
+        CONTAINER_NAME,
         "--memory=2g",
         "--cpus=4.0",
         "--pids-limit=2048",
         "--network=host",
-        "-v", f"{project_path}:{CONTAINER_PROJECT}",
-        "-v", f"{SAMPLES_PATH}:{CONTAINER_SAMPLES}:ro",
-        "-v", f"{GRADER_CGI_PATH}:{CONTAINER_CGI}",
-        "-w", workdir,
+        "-v",
+        f"{project_path}:{CONTAINER_PROJECT}",
+        "-v",
+        f"{SAMPLES_PATH}:{CONTAINER_SAMPLES}:ro",
+        "-v",
+        f"{GRADER_CGI_PATH}:{CONTAINER_CGI}",
+        "-w",
+        workdir,
         IMAGE_NAME,
-        "sleep", "800"
+        "sleep",
+        "800",
     ]
 
     result = run_cmd(cmd)
@@ -275,8 +298,12 @@ def start_container(project_path):
 
 def _find_workdir(project_path):
     for root, dirs, files in os.walk(project_path):
-        dirs[:] = [d for d in dirs if not d.startswith('.')
-                   and d not in ['node_modules', '__pycache__', '.git']]
+        dirs[:] = [
+            d
+            for d in dirs
+            if not d.startswith(".")
+            and d not in ["node_modules", "__pycache__", ".git"]
+        ]
         if "Makefile" in files or "makefile" in files:
             rel = os.path.relpath(root, project_path)
             if rel == ".":
@@ -292,6 +319,7 @@ def stop_container():
 # ------------------------------------------------
 # Build + Server
 # ------------------------------------------------
+
 
 def build_project():
     print("🔨 Building project...")
@@ -350,7 +378,7 @@ def start_server():
         "--port 9000 "
         f"--root {CONTAINER_SAMPLES} "
         "--numThreads 32 "  # Increased from 32 for better performance
-        "--timeout 5 "     # Increased timeout to prevent early drops
+        "--timeout 5 "  # Increased timeout to prevent early drops
         f"--cgiHandler {CONTAINER_CGI}/dispatcher.py "
         "> server.log 2>&1 &"
     )
@@ -366,6 +394,60 @@ def start_server():
     log, _, _ = exec_in_container("cat server.log")
     print(log)
     sys.exit(1)
+
+
+def force_restart_container(project_path):
+    """
+    Hard-restarts the container and re-initializes the server.
+    Used when the container becomes unresponsive or crashes.
+    """
+    print(f"  🚨 CRITICAL: Container '{CONTAINER_NAME}' is unresponsive.")
+    print("  🔄 Performing HARD RESTART of the Docker container...")
+
+    # 1. Kill and remove the old container
+    stop_container()
+    time.sleep(1)
+
+    # 2. Re-run the start_container logic
+    start_container(project_path)
+
+    # 3. Re-build (in case the crash corrupted something)
+    if build_project():
+        # 4. Start the server process again
+        start_server()
+        return True
+
+    return False
+
+
+def restart_server():
+    """Attempts to restart the icws process inside the container."""
+    print("  ⚠ Server not responding — attempting soft restart...")
+
+    # Kill the process
+    exec_in_container("pkill -f icws 2>/dev/null || true")
+    time.sleep(2)
+
+    # Run the start command (using the same logic as start_server)
+    # Note: Ensure CONTAINER_SAMPLES and CONTAINER_CGI are defined in this file
+    exec_in_container(
+        f"nohup ./icws --port 9000 "
+        f"--root {CONTAINER_SAMPLES} "
+        f"--numThreads 32 --timeout 5 "
+        f"--cgiHandler {CONTAINER_CGI}/dispatcher.py "
+        f"> server.log 2>&1 &"
+    )
+
+    # Wait to see if the port opens
+    for _ in range(20):
+        out, _, _ = exec_in_container("ss -ltn | grep 9000")
+        if out:
+            print("  ✅ Server process restarted")
+            return True
+        time.sleep(0.5)
+
+    print("  ❌ Server process failed to start")
+    return False
 
 
 def stop_server():
